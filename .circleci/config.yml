@@ -207,14 +207,93 @@ defaults:
   - base_ubuntu1604_clang: &base_ubuntu1604_clang
       docker:
         - image: << pipeline.parameters.ubuntu-1604-clang-ossfuzz-docker-image >>
+      environment:
+        TERM: xterm
 
   - base_ubuntu2004_clang: &base_ubuntu2004_clang
       docker:
         - image: << pipeline.parameters.ubuntu-2004-clang-docker-image >>
+      environment:
+        TERM: xterm
+        CC: clang
+        CXX: clang++
+        MAKEFLAGS: -j 3
+
+  - base_ubuntu2004_clang_xlarge: &base_ubuntu2004_clang_xlarge
+      <<: *base_ubuntu2004_clang
+      resource_class: xlarge
+      environment:
+        TERM: xterm
+        CC: clang
+        CXX: clang++
+        MAKEFLAGS: -j 10
 
   - base_ubuntu2004: &base_ubuntu2004
       docker:
         - image: << pipeline.parameters.ubuntu-2004-docker-image >>
+      environment:
+        TERM: xterm
+
+  - base_ubuntu2004_xlarge: &base_ubuntu2004_xlarge
+      <<: *base_ubuntu2004
+      resource_class: xlarge
+      environment:
+        TERM: xterm
+        MAKEFLAGS: -j 10
+
+  - base_buildpack_focal: &base_buildpack_focal
+      docker:
+        - image: buildpack-deps:focal
+      environment:
+        TERM: xterm
+
+  - base_buildpack_latest: &base_buildpack_latest
+      docker:
+        - image: buildpack-deps:latest
+      environment:
+        TERM: xterm
+
+  - base_archlinux: &base_archlinux
+      docker:
+        - image: archlinux:base
+      environment:
+        TERM: xterm
+
+  - base_win_powershell: &base_win_powershell
+      executor:
+        name: win/default
+        shell: powershell.exe
+
+  - base_win_cmd: &base_win_cmd
+      executor:
+        name: win/default
+        shell: cmd.exe
+
+  - base_osx: &base_osx
+      macos:
+        xcode: "11.0.0"
+      environment:
+        TERM: xterm
+
+  - base_ems_xlarge: &base_ems_xlarge
+      docker:
+        - image: << pipeline.parameters.emscripten-docker-image >>
+      resource_class: xlarge
+      environment:
+        TERM: xterm
+        MAKEFLAGS: -j 10
+
+  - base_python: &base_python
+      docker:
+        - image: circleci/python:3.6
+      environment:
+        TERM: xterm
+
+  - base_node_latest: &base_node_latest
+      docker:
+        - image: circleci/node
+      environment:
+        TERM: xterm
 
   # --------------------------------------------------------------------------
   # Workflow Templates
@@ -298,10 +377,7 @@ defaults:
 jobs:
 
   chk_spelling:
-    docker:
-      - image: circleci/python:3.6
-    environment:
-      TERM: xterm
+    <<: *base_python
     steps:
       - checkout
       - attach_workspace:
@@ -315,10 +391,7 @@ jobs:
           command: ~/.local/bin/codespell -S "*.enc,.git,Dockerfile*" -I ./scripts/codespell_whitelist.txt
 
   chk_docs_examples:
-    docker:
-      - image: circleci/node
-    environment:
-      TERM: xterm
+    <<: *base_node_latest
     steps:
       - checkout
       - attach_workspace:
@@ -331,8 +404,7 @@ jobs:
           command: ./test/docsCodeStyle.sh
 
   chk_coding_style:
-    docker:
-      - image: buildpack-deps:focal
+    <<: *base_buildpack_focal
     steps:
       - checkout
       - run:
@@ -349,8 +421,7 @@ jobs:
           command: ./scripts/check_symlinks.sh
 
   chk_errorcodes:
-    docker:
-      - image: circleci/python:3.6
+    <<: *base_python
     steps:
       - checkout
       - run:
@@ -358,8 +429,7 @@ jobs:
           command: ./scripts/error_codes.py --check
 
   chk_pylint:
-    docker:
-      - image: buildpack-deps:focal
+    <<: *base_buildpack_focal
     steps:
       - checkout
       - run:
@@ -374,8 +444,7 @@ jobs:
           command: ./scripts/pylint_all.py
 
   chk_antlr_grammar:
-    docker:
-      - image: buildpack-deps:focal
+    <<: *base_buildpack_focal
     steps:
       - checkout
       - run:
@@ -386,10 +455,7 @@ jobs:
           command: ./scripts/test_antlr_grammar.sh
 
   chk_buglist:
-    docker:
-      - image: circleci/node
-    environment:
-      TERM: xterm
+    <<: *base_node_latest
     steps:
       - checkout
       - run:
@@ -403,10 +469,7 @@ jobs:
           command: ./test/buglistTests.js
 
   chk_proofs:
-    docker:
-      - image: buildpack-deps:latest
-    environment:
-      TERM: xterm
+    <<: *base_buildpack_latest
     steps:
       - checkout
       - run:
@@ -418,17 +481,13 @@ jobs:
       - run: *run_proofs
 
   chk_docs_pragma_min_version:
-    docker:
-      - image: << pipeline.parameters.ubuntu-2004-docker-image >>
-    environment:
-      TERM: xterm
+    <<: *base_ubuntu2004
     steps:
       - checkout
       - run: *run_docs_pragma_min_version
 
   t_pyscripts_ubu:
-    docker:
-      - image: << pipeline.parameters.ubuntu-2004-docker-image >>
+    <<: *base_ubuntu2004
     steps:
       - checkout
       - run:
@@ -436,9 +495,7 @@ jobs:
           command: python3 test/pyscriptTests.py
 
   t_pyscripts_win:
-    executor:
-      name: win/default
-      shell: powershell.exe
+    <<: *base_win_powershell
     steps:
       - run: git config --global core.autocrlf false
       - checkout
@@ -447,11 +504,7 @@ jobs:
           command: python.exe test/pyscriptTests.py
 
   b_ubu: &b_ubu
-    resource_class: xlarge
-    docker:
-      - image: << pipeline.parameters.ubuntu-2004-docker-image >>
-    environment:
-      MAKEFLAGS: -j 10
+    <<: *base_ubuntu2004_xlarge
     steps:
       - checkout
       - run: *run_build
@@ -461,7 +514,7 @@ jobs:
 
   # x64 ASAN build, for testing for memory related bugs
   b_ubu_asan: &b_ubu_asan
-    <<: *b_ubu
+    <<: *base_ubuntu2004_xlarge
     environment:
       CMAKE_OPTIONS: -DSANITIZE=address
       MAKEFLAGS: -j 10
@@ -473,13 +526,7 @@ jobs:
       - persist_to_workspace: *artifacts_executables
 
   b_ubu_clang: &b_ubu_clang
-    resource_class: xlarge
-    docker:
-      - image: << pipeline.parameters.ubuntu-2004-clang-docker-image >>
-    environment:
-      CC: clang
-      CXX: clang++
-      MAKEFLAGS: -j 10
+    <<: *base_ubuntu2004_clang_xlarge
     steps:
       - checkout
       - run: *run_build
@@ -487,8 +534,7 @@ jobs:
       - persist_to_workspace: *artifacts_executables
 
   b_ubu_asan_clang: &b_ubu_asan_clang
-    docker:
-      - image: << pipeline.parameters.ubuntu-2004-clang-docker-image >>
+    <<: *base_ubuntu2004_clang
     environment:
       CC: clang
       CXX: clang++
@@ -501,8 +547,7 @@ jobs:
       - persist_to_workspace: *artifacts_executables
 
   b_ubu_ubsan_clang: &b_ubu_ubsan_clang
-    docker:
-      - image: << pipeline.parameters.ubuntu-2004-clang-docker-image >>
+    <<: *base_ubuntu2004_clang
     environment:
       CC: clang
       CXX: clang++
@@ -522,7 +567,7 @@ jobs:
       MAKEFLAGS: -j 10
 
   b_ubu_static:
-    <<: *b_ubu
+    <<: *base_ubuntu2004_xlarge
     environment:
       MAKEFLAGS: -j 10
       CMAKE_OPTIONS: -DCMAKE_BUILD_TYPE=Release -DUSE_Z3_DLOPEN=ON -DUSE_CVC4=OFF -DSOLC_STATIC_STDLIBS=ON
@@ -535,7 +580,7 @@ jobs:
       - store_artifacts: *artifacts_solc
 
   b_ubu_codecov:
-    <<: *b_ubu
+    <<: *base_ubuntu2004_xlarge
     environment:
       COVERAGE: ON
       CMAKE_BUILD_TYPE: Debug
@@ -570,7 +615,7 @@ jobs:
   # Builds in C++20 mode and uses debug build in order to speed up.
   # Do *NOT* store any artifacts or workspace as we don't run tests on this build.
   b_ubu_cxx20:
-    <<: *b_ubu
+    <<: *base_ubuntu2004_xlarge
     environment:
       CMAKE_BUILD_TYPE: Debug
       CMAKE_OPTIONS: -DCMAKE_CXX_STANDARD=20 -DUSE_CVC4=OFF
@@ -580,13 +625,7 @@ jobs:
       - run: *run_build
 
   b_ubu_ossfuzz: &b_ubu_ossfuzz
-    docker:
-      - image: << pipeline.parameters.ubuntu-1604-clang-ossfuzz-docker-image >>
-    environment:
-      CC: clang
-      CXX: clang++
-      TERM: xterm
-      MAKEFLAGS: -j 3
+    <<: *base_ubuntu1604_clang
     steps:
       - checkout
       - run: *setup_prerelease_commit_hash
@@ -611,8 +650,7 @@ jobs:
       - store_artifacts: *artifacts_test_results
 
   b_archlinux:
-    docker:
-      - image: archlinux:base
+    <<: *base_archlinux
     environment:
       TERM: xterm
       MAKEFLAGS: -j 3
@@ -627,8 +665,7 @@ jobs:
       - persist_to_workspace: *artifacts_executables
 
   b_osx:
-    macos:
-      xcode: "11.0.0"
+    <<: *base_osx
     environment:
       TERM: xterm
       CMAKE_BUILD_TYPE: Release
@@ -663,8 +700,7 @@ jobs:
             - build/test/tools/solfuzzer
 
   t_osx_soltest:
-    macos:
-      xcode: "11.0.0"
+    <<: *base_osx
     environment:
       EVM: << pipeline.parameters.evm-version >>
       OPTIMIZE: 0
@@ -681,10 +717,7 @@ jobs:
       - store_artifacts: *artifacts_test_results
 
   t_osx_cli:
-    macos:
-      xcode: "11.0.0"
-    environment:
-      TERM: xterm
+    <<: *base_osx
     steps:
       - checkout
       - restore_cache:
@@ -696,12 +729,7 @@ jobs:
       - store_artifacts: *artifacts_test_results
 
   b_ems:
-    resource_class: xlarge
-    docker:
-      - image: << pipeline.parameters.emscripten-docker-image >>
-    environment:
-      MAKEFLAGS: -j 10
-      TERM: xterm
+    <<: *base_ems_xlarge
     steps:
       - checkout
       - run:
@@ -721,8 +749,7 @@ jobs:
             - version.txt
 
   b_docs:
-    docker:
-      - image: << pipeline.parameters.ubuntu-2004-docker-image >>
+    <<: *base_ubuntu2004
     steps:
       - checkout
       - run: *setup_prerelease_commit_hash
@@ -739,34 +766,31 @@ jobs:
     <<: *steps_soltest_all
 
   t_archlinux_soltest: &t_archlinux_soltest
-      docker:
-        - image: archlinux:base
-      environment:
-        EVM: << pipeline.parameters.evm-version >>
-        OPTIMIZE: 0
-        TERM: xterm
-        # For Archlinux we do not have prebuilt docker images and we would need to build evmone from source,
-        # thus we forgo semantics tests to speed things up.
-        SOLTEST_FLAGS: --no-semantic-tests
-      steps:
-        - run:
-            name: Install runtime dependencies
-            command: |
-              pacman --noconfirm -Syu --noprogressbar --needed base-devel boost cmake z3 cvc4 git openssh tar
-        - when:
-            condition: true
-            <<: *steps_soltest
+    <<: *base_archlinux
+    environment:
+      EVM: << pipeline.parameters.evm-version >>
+      OPTIMIZE: 0
+      TERM: xterm
+      # For Archlinux we do not have prebuilt docker images and we would need to build evmone from source,
+      # thus we forgo semantics tests to speed things up.
+      SOLTEST_FLAGS: --no-semantic-tests
+    steps:
+      - run:
+          name: Install runtime dependencies
+          command: |
+            pacman --noconfirm -Syu --noprogressbar --needed base-devel boost cmake z3 cvc4 git openssh tar
+      - when:
+          condition: true
+          <<: *steps_soltest
 
   t_ubu_soltest_enforce_yul: &t_ubu_soltest_enforce_yul
-    docker:
-      - image: << pipeline.parameters.ubuntu-2004-docker-image >>
+    <<: *base_ubuntu2004
     environment:
       EVM: << pipeline.parameters.evm-version >>
       SOLTEST_FLAGS: --enforce-via-yul
       OPTIMIZE: 0
       TERM: xterm
     <<: *steps_soltest
-
 
   t_ubu_clang_soltest: &t_ubu_clang_soltest
     <<: *base_ubuntu2004_clang
@@ -781,17 +805,14 @@ jobs:
     <<: *t_ubu_soltest
 
   t_ubu_cli: &t_ubu_cli
-    docker:
-      - image: << pipeline.parameters.ubuntu-2004-docker-image >>
-    environment:
-      TERM: xterm
+    <<: *base_ubuntu2004
     <<: *steps_cmdline_tests
 
   t_ubu_release_cli: &t_ubu_release_cli
     <<: *t_ubu_cli
 
   t_ubu_asan_cli:
-    <<: *t_ubu_cli
+    <<: *base_ubuntu2004
     environment:
       TERM: xterm
       ASAN_OPTIONS: check_initialization_order=true:detect_stack_use_after_return=true:strict_init_order=true:strict_string_checks=true:detect_invalid_pointer_pairs=2
@@ -817,10 +838,9 @@ jobs:
     <<: *steps_soltest
 
   t_ubu_ubsan_clang:
+    <<: *base_ubuntu2004_clang
     environment:
       EVM: << pipeline.parameters.evm-version >>
-    docker:
-      - image: << pipeline.parameters.ubuntu-2004-clang-docker-image >>
     steps:
       - when:
           condition: true
@@ -828,8 +848,7 @@ jobs:
       - gitter_notify_failure
 
   t_ubu_ubsan_clang_cli:
-    docker:
-      - image: << pipeline.parameters.ubuntu-2004-clang-docker-image >>
+    <<: *base_ubuntu2004_clang
     steps:
       - when:
           condition: true
@@ -837,10 +856,7 @@ jobs:
       - gitter_notify_failure
 
   t_ems_solcjs:
-    docker:
-      - image: << pipeline.parameters.ubuntu-2004-docker-image >>
-    environment:
-      TERM: xterm
+    <<: *base_ubuntu2004
     steps:
       - checkout
       - attach_workspace:
@@ -896,9 +912,7 @@ jobs:
             - gitter_notify_success
 
   b_win: &b_win
-    executor:
-      name: win/default
-      shell: powershell.exe
+    <<: *base_win_powershell
     steps:
       # NOTE: Not disabling git's core.autocrlf here because we want to build using the typical Windows config.
       - checkout
@@ -933,9 +947,7 @@ jobs:
       FORCE_RELEASE: ON
 
   t_win: &t_win
-    executor:
-      name: win/default
-      shell: powershell.exe
+    <<: *base_win_powershell
     steps:
       # NOTE: Git's default core.autocrlf is fine for running soltest. We get additional coverage
       # for files using CRLF that way.
@@ -955,8 +967,7 @@ jobs:
     <<: *t_win
 
   b_bytecode_ubu:
-    docker:
-      - image: << pipeline.parameters.ubuntu-2004-docker-image >>
+    <<: *base_ubuntu2004
     steps:
       - checkout
       - attach_workspace:
@@ -976,10 +987,7 @@ jobs:
             - bytecode-report-ubuntu-cli.txt
 
   b_bytecode_osx:
-    macos:
-      xcode: "11.0.0"
-    environment:
-      TERM: xterm
+    <<: *base_osx
     steps:
       - checkout
       - attach_workspace:
@@ -999,9 +1007,7 @@ jobs:
             - bytecode-report-osx-cli.txt
 
   b_bytecode_win:
-    executor:
-      name: win/default
-      shell: cmd.exe
+    <<: *base_win_cmd
     steps:
       # NOTE: For bytecode generation we need the input files to be byte-for-byte identical on all
       # platforms so line ending conversions must absolutely be disabled.
@@ -1024,8 +1030,7 @@ jobs:
             - bytecode-report-windows-cli.txt
 
   b_bytecode_ems:
-    docker:
-      - image: circleci/node:16
+    <<: *base_node_latest
     environment:
       SOLC_EMSCRIPTEN: "On"
     steps:
@@ -1041,8 +1046,7 @@ jobs:
             - bytecode-report-emscripten.txt
 
   t_bytecode_compare:
-    docker:
-      - image: << pipeline.parameters.ubuntu-2004-docker-image >>
+    <<: *base_ubuntu2004
     environment:
       REPORT_FILES: |
         bytecode-report-emscripten.txt
